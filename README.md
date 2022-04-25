@@ -1,4 +1,5 @@
 # Screeps Arena Typescript Starter
+[Original can be found here](https://github.com/LittleSound/screeps-arena/)
 
 ## This repo is a WIP starter template for the current Closed Alpha of [Screeps Arena](https://store.steampowered.com/app/1137320/Screeps_Arena/)
 

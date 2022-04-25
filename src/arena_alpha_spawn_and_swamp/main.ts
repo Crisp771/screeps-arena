@@ -37,6 +37,7 @@ let containers: Structure[];
 let enemySpawn: StructureSpawn | undefined;
 let enemyCreeps: Creep[];
 let enemyWorkerCreeps: Creep[];
+let enemyHealerCreeps: Creep[];
 let injuredEnemyCreeps: Creep[];
 
 let constructionSite: ConstructionSite<BuildableStructure> | undefined
@@ -46,22 +47,24 @@ let isAttacking: boolean = false;
 export function loop(): void {
   // Your code goes here
   mySpawn = getObjectsByPrototype(StructureSpawn).find(i => i.my);
-  myTowers = getObjectsByPrototype(StructureTower).filter(i => i.my);
+  // myTowers = getObjectsByPrototype(StructureTower).filter(i => i.my);
   creeps = getObjectsByPrototype(Creep).filter(i => i.my);
   builderCreeps = getObjectsByPrototype(Creep).filter(i => i.my && i.body.find(b => { return b.type === WORK }));
   workerCreeps = getObjectsByPrototype(Creep).filter(i => i.my && i.body.find(b => { return b.type === CARRY }));
   warriorCreeps = getObjectsByPrototype(Creep).filter(i => i.my && i.body.find(b => { return b.type === ATTACK || b.type === RANGED_ATTACK }));
   healerCreeps = getObjectsByPrototype(Creep).filter(i => i.my && i.body.find(b => { return b.type === HEAL }));
   // Check the actual Creep object, not the body array.
-  injuredCreeps = getObjectsByPrototype(Creep).filter(i => i.my && (i.hits / i.hitsMax < 0.6));
+  //injuredCreeps = getObjectsByPrototype(Creep).filter(i => i.my && (i.hits / i.hitsMax < 0.6));
+  injuredCreeps = getObjectsByPrototype(Creep).filter(i => i.my && (i.hits != i.hitsMax));
   containers = getObjectsByPrototype(StructureContainer).filter(c => { return c.store.getUsedCapacity(RESOURCE_ENERGY)! > 0 && !c.my });
   enemySpawn = getObjectsByPrototype(StructureSpawn).find(i => !i.my);
   enemyCreeps = getObjectsByPrototype(Creep).filter(creep => !creep.my);
   enemyWorkerCreeps = getObjectsByPrototype(Creep).filter(creep => !creep.my && creep.body.find(b => { return b.type === CARRY }));
+  enemyHealerCreeps = getObjectsByPrototype(Creep).filter(creep => !creep.my && creep.body.find(b => { return b.type === HEAL }));
   injuredEnemyCreeps = getObjectsByPrototype(Creep).filter(creep => !creep.my && creep.hits < creep.hitsMax);
 
   console.log(`Creeps Length ${creeps.length}`);
-  console.log(`Towers Length ${myTowers.length}`);
+  // console.log(`Towers Length ${myTowers.length}`);
   console.log(`🐞 Worker Creeps : ${workerCreeps.length}`);
   console.log(`✨ Builder Creeps : ${builderCreeps.length}`);
   console.log(`🔫 Warrior Creeps : ${warriorCreeps.length}`);
@@ -113,7 +116,7 @@ export function loop(): void {
 function spawnCreeps() {
   if (mySpawn) {
     let closestEnergyContainerToSpawnPoint: Structure | null;
-    let closestEnergyContainerDistance: number | null = null;
+    let closestEnergyContainerDistance: number = 999;
     closestEnergyContainerToSpawnPoint = mySpawn.findClosestByPath(containers);
     if (closestEnergyContainerToSpawnPoint) {
       closestEnergyContainerDistance = getRange(mySpawn, closestEnergyContainerToSpawnPoint);
@@ -121,22 +124,22 @@ function spawnCreeps() {
 
     if (workerCreeps.length < 4) {
       console.log('Spawning Worker Creep');
-      mySpawn.spawnCreep([MOVE, MOVE, MOVE, CARRY, CARRY]).object;
+      mySpawn.spawnCreep([MOVE, MOVE, MOVE, MOVE, MOVE, MOVE, CARRY, CARRY]).object;
     } else {
       if (closestEnergyContainerDistance && workerCreeps.length < 8 && closestEnergyContainerDistance > 4) {
         console.log('Spawning Worker Creep');
-        mySpawn.spawnCreep([MOVE, MOVE, MOVE, CARRY, CARRY]).object;
+        mySpawn.spawnCreep([MOVE, MOVE, MOVE, MOVE, MOVE, MOVE, CARRY, CARRY]).object;
       }
       if (builderCreeps.length < 0) {
         console.log('Spawning Builder Creep');
         mySpawn.spawnCreep([MOVE, MOVE, CARRY, WORK, CARRY, WORK]).object;
       } else {
-        if (creeps.length % 6 === 0) {
+        if (creeps.length % 6 === 0 || (healerCreeps.length < 2 && closestEnergyContainerDistance > 4)) {
           console.log('Spawning Healer Creep');
           mySpawn.spawnCreep([MOVE, MOVE, MOVE, MOVE, MOVE, MOVE, MOVE, MOVE, HEAL, HEAL]).object;
         } else {
           console.log('Spawning Warrior Creep');
-          mySpawn.spawnCreep([MOVE, MOVE, MOVE, MOVE, MOVE, MOVE, RANGED_ATTACK, RANGED_ATTACK, RANGED_ATTACK, TOUGH, TOUGH]).object;
+          mySpawn.spawnCreep([TOUGH, TOUGH, MOVE, MOVE, MOVE, MOVE, MOVE, MOVE, RANGED_ATTACK, RANGED_ATTACK, RANGED_ATTACK]).object;
         }
       }
     }
@@ -147,6 +150,10 @@ function spawnCreeps() {
 function workerCreepAssignments() {
   if (mySpawn)
     for (var creep of workerCreeps) {
+      var enemiesInRange = creep.findInRange(enemyCreeps, 7);
+      if (enemiesInRange && enemiesInRange.length > 0) {
+        flee(creep, enemiesInRange, 8);
+      }
       var container = creep.findClosestByPath(containers.filter(c => {
         if (c.ticksToDecay)
           return c.getRangeTo(creep) < c.ticksToDecay
@@ -159,19 +166,19 @@ function workerCreepAssignments() {
             creep.moveTo(container);
           }
         } else {
-          if (myTowers.length) {
-            for (var tower of myTowers) {
-              if (tower.store.energy < 40) {
-                creep.transfer(tower, RESOURCE_ENERGY);
-              } else {
-                if (mySpawn) {
-                  if (creep.transfer(mySpawn, RESOURCE_ENERGY) == ERR_NOT_IN_RANGE) {
-                    creep.moveTo(mySpawn);
-                  }
-                }
-              }
-            }
-          }
+          // if (myTowers.length) {
+          //   for (var tower of myTowers) {
+          //     if (tower.store.energy < 40) {
+          //       creep.transfer(tower, RESOURCE_ENERGY);
+          //     } else {
+          //       if (mySpawn) {
+          //         if (creep.transfer(mySpawn, RESOURCE_ENERGY) == ERR_NOT_IN_RANGE) {
+          //           creep.moveTo(mySpawn);
+          //         }
+          //       }
+          //     }
+          //   }
+          // }
           if (mySpawn) {
             if (creep.transfer(mySpawn, RESOURCE_ENERGY) == ERR_NOT_IN_RANGE) {
               creep.moveTo(mySpawn);
@@ -238,14 +245,14 @@ function warriorCreepAssignments(isAttacking: boolean) {
       }
       if (enemySpawn) {
         if (enemyCreeps.length > 0 && distanceToEnemySpawnPoint && distanceToEnemySpawnPoint > 5) {
-          attackCreeps(creep, stayPut);
+          attackCreeps(creep, stayPut && creep.id === closestWarriorCreepToEnemySpawnPoint!.id);
         } else {
           if (creep.rangedAttack(enemySpawn) == ERR_NOT_IN_RANGE) {
-            attackCreeps(creep, stayPut);
+            attackCreeps(creep, stayPut && creep.id === closestWarriorCreepToEnemySpawnPoint!.id);
           }
         }
       } else {
-        attackCreeps(creep, stayPut);
+        attackCreeps(creep, stayPut && creep.id === closestWarriorCreepToEnemySpawnPoint!.id);
       }
     }
   } else {
@@ -253,8 +260,10 @@ function warriorCreepAssignments(isAttacking: boolean) {
     if (enemySpawn) closestWarriorCreepToEnemySpawnPoint = enemySpawn.findClosestByPath(warriorCreeps);
     if (getTicks() % 25 === 0) {
       if (enemySpawn && closestWarriorCreepToEnemySpawnPoint) closestWarriorCreepToEnemySpawnPoint.moveTo(enemySpawn);
+    }
+    if (getTicks() % 15 === 0) {
       for (var creep of warriorCreeps) {
-        if (closestWarriorCreepToEnemySpawnPoint && creep.id === closestWarriorCreepToEnemySpawnPoint.id) {
+        if (closestWarriorCreepToEnemySpawnPoint && creep.id != closestWarriorCreepToEnemySpawnPoint.id) {
           if (enemySpawn) creep.moveTo(enemySpawn);
         }
       }
@@ -303,6 +312,8 @@ function towerProd(tower: StructureTower) {
 }
 function attackCreeps(creep: Creep, stayPut: boolean) {
   let closestEnemyCreep: Creep | null = null;
+  let threatLevel: Number | undefined = 0;
+  threatLevel = mySpawn?.findInRange(enemyCreeps, 30).length;
   let enemyCreepRange: number = 0;
   if (injuredEnemyCreeps.length > 0) {
     var mobileEnemyCreeps = creep.findInRange(injuredEnemyCreeps.filter(c => c.body.find(b => b.type === MOVE && b.hits > 0)), 3);
@@ -314,18 +325,27 @@ function attackCreeps(creep: Creep, stayPut: boolean) {
   } else {
     closestEnemyCreep = creep.findClosestByPath(enemyCreeps);
   }
+  if(enemyHealerCreeps){
+    var localEnemyHealerCreeps = creep.findInRange(enemyHealerCreeps, 3);
+    if(localEnemyHealerCreeps){
+      closestEnemyCreep = creep.findClosestByRange(localEnemyHealerCreeps);
+    }
+  }
   if (closestEnemyCreep) enemyCreepRange = creep.getRangeTo(closestEnemyCreep);
   if (closestEnemyCreep?.body.find(b => b.type === ATTACK) && enemyCreepRange < 4) {
     flee(creep, creep.findInRange(enemyCreeps, 5), 4);
   }
-  if (enemyCreeps.length) {
+  if (enemyCreeps.length > 0) {
     if (closestEnemyCreep && creep.rangedAttack(closestEnemyCreep) == ERR_NOT_IN_RANGE) {
       if (creep.rangedAttack(closestEnemyCreep) == ERR_NOT_IN_RANGE) {
-        creep.moveTo(closestEnemyCreep);
+        if (threatLevel! > 3 && mySpawn!.getRangeTo(creep) > 20)
+          creep.moveTo(mySpawn!);
+        else
+          creep.moveTo(closestEnemyCreep);
       }
-    } else {
-      if (enemySpawn && !stayPut) creep.moveTo(enemySpawn);
     }
+  } else {
+    if (enemySpawn && !stayPut) creep.moveTo(enemySpawn);
   }
 }
 

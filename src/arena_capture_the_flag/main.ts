@@ -47,7 +47,7 @@ declare module "game/prototypes" {
     target?: Creep
     myHealers?: Creep[]
     historyHits?: number
-    state?: CreepState
+    // state?: CreepState
   }
 }
 
